@@ -19,7 +19,7 @@ import path from 'path';
 import os from 'os';
 import { spawn, ChildProcess, execSync } from 'child_process';
 import fs from 'fs';
-import { createServer } from '../server/fastify';
+import { createServer } from '../server/server';
 import { buildAppMenu } from './menu';
 import { checkForUpdates } from './updater';
 import { setupPocketBase } from './pocketbase-setup';
@@ -49,7 +49,7 @@ const PB_BINARY = IS_DEV
 if (!fs.existsSync(NEXT_OUT_DIR)) {
   fs.mkdirSync(NEXT_OUT_DIR, { recursive: true });
   fs.writeFileSync(path.join(NEXT_OUT_DIR, 'index.html'),
-    '<html><body><p>Run npm run build:UI first</p></body></html>');
+    '<html><body><p>Spotix Scanner can\'t find the required files build files for the web interface. Run pnpm build:ui first.</p></body></html>');
 }
 
 // ─── Network helpers ──────────────────────────────────────────────────────────

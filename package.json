@@ -43,7 +43,7 @@
     "@types/selfsigned": "^2.0.6",
     "concurrently": "^8.2.2",
     "cross-env": "^7.0.3",
-    "electron": "^41.1.0",
+    "electron": "^42.4.0",
     "electron-builder": "^26.8.1",
     "typescript": "^5.4.5",
     "wait-on": "^7.2.0"
