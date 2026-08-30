@@ -4,6 +4,9 @@
   "description": "Spotix Professional Event Check-in System",
   "author": "Spotix Technologies",
   "main": "dist/electron/main.js",
+  "engines": {
+    "node": ">=22.12.0"
+  },
   "scripts": {
     "dev": "concurrently --kill-others --names \"NEXT,TSC,ELECTRON\" \"npm run dev:UI\" \"npm run dev:tsc\" \"npm run dev:electron\"",
     "dev:UI": "npm --prefix UI run dev",
