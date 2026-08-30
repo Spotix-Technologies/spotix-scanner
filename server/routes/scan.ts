@@ -17,17 +17,26 @@ import {
   findGuestByFace,
   checkInGuest,
   createLog,
+  isEventLocked,
 } from '../db';
-import { connectedScanners, blockedScanners, broadcast } from '../state';
+import { connectedScanners, blockedScanners, broadcast, getActiveEvent } from '../state';
 import { getCheckedInDate, getCheckedInTime } from '../utils';
 import type { ScanRequest } from '../types';
 
 /**
  * POST /api/scan
  *
- * Core check-in endpoint.  Accepts a ticketId, email, or face embedding,
- * looks up the guest, marks them checked-in, writes a log record, and
- * broadcasts the result to all connected admin/scanner WebSocket clients.
+ * Core check-in endpoint. Strictly event-aware:
+ * - The server's own `activeEvent` (set from the lobby "Start" button) is the
+ *   single source of truth for which event is currently being scanned —
+ *   NOT anything the scanner device sends. If no event is active, the scan
+ *   is rejected with a `no_active_event` result.
+ * - Rejects scans when the active event is locked (sync in progress).
+ * - Looks the guest up GLOBALLY (across all imported events) by
+ *   ticketId / email / face — then verifies the guest's own `eventId`
+ *   matches the server's active event. If it doesn't, the scan is rejected
+ *   with a `wrong_event` result instead of being silently treated as
+ *   "not found" or, worse, checked in against the wrong event.
  */
 export function registerScanRoutes(app: FastifyInstance): void {
 
@@ -37,6 +46,29 @@ export function registerScanRoutes(app: FastifyInstance): void {
     if (blockedScanners.has(scannerId))
       return reply.status(403).send({ result: 'blocked', message: 'Scanner is blocked.' });
 
+    // ── The server (lobby Start/Stop), not the scanner device, decides which
+    // event is "live". If nothing is active, refuse every scan.
+    const activeEvent = getActiveEvent();
+    if (!activeEvent) {
+      return reply.status(409).send({
+        result: 'no_active_event',
+        message: 'No active event on this server.',
+      });
+    }
+    const eventId = activeEvent.eventId;
+
+    // Prevent check-ins during sync
+    const locked = await isEventLocked(eventId);
+    if (locked) {
+      return reply.status(423).send({
+        result: 'locked',
+        message: 'Check-ins are paused while syncing. Please wait for the sync to complete.',
+      });
+    }
+
+    // ── Look up the guest GLOBALLY (not scoped to eventId yet) ────────────────
+    // This lets us distinguish "no such guest anywhere" (invalid) from
+    // "this guest exists, but belongs to a different event" (wrong_event).
     let guest = null;
     if (ticketId)                   guest = await getGuestByTicketId(ticketId);
     else if (email)                 guest = await getGuestByEmail(email);
@@ -49,12 +81,26 @@ export function registerScanRoutes(app: FastifyInstance): void {
       checkedInDate: getCheckedInDate(),
       checkedInTime: getCheckedInTime(),
       note:          null,
+      eventId,
     };
 
     if (!guest) {
       await createLog({ ...logBase, ticketId: ticketId || 'UNKNOWN', guestName: 'Unknown', result: 'invalid' });
       broadcast({ type: 'scan_result', payload: { log: { ...logBase, result: 'invalid' }, guest: null } });
       return reply.send({ result: 'invalid', message: 'Ticket not found.' });
+    }
+
+    // ── Strict event scoping ────────────────────────────────────────────────
+    // The guest exists, but does not belong to the event currently active on
+    // this server. Reject the scan rather than checking them in or treating
+    // them as a generic "invalid" ticket.
+    if (guest.eventId !== eventId) {
+      await createLog({ ...logBase, ticketId: guest.ticketId, guestName: guest.fullName, result: 'wrong_event' });
+      broadcast({ type: 'scan_result', payload: { log: { ...logBase, result: 'wrong_event' }, guest: null } });
+      return reply.send({
+        result: 'wrong_event',
+        message: `${guest.fullName} does not belong to this event.`,
+      });
     }
 
     if (guest.checkedIn) {

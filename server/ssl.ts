@@ -15,7 +15,7 @@ import os from 'os';
 import path from 'path';
 import selfsigned from 'selfsigned';
 
-// ─── Network helpers ──────────────────────────────────────────────────────────
+// Network helpers 
 
 export function getLocalIPs(): string[] {
   const ips: string[] = [];
@@ -27,7 +27,7 @@ export function getLocalIPs(): string[] {
   return ips;
 }
 
-// ─── SSL cert management ──────────────────────────────────────────────────────
+// SSL cert management
 
 export function getOrCreateCert(certDir: string): { cert: Buffer; key: Buffer; localIPs: string[] } {
   const certPath    = path.join(certDir, 'cert.pem');

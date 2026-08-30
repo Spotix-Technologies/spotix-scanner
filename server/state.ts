@@ -10,15 +10,35 @@
  * For licensing inquiries, contact: legal@spotix.com.ng
  */
 
-import type { Scanner, WSMessage } from './types';
+import type { Scanner, WSMessage, ActiveEventInfo } from './types';
 import type { SocketStream } from '@fastify/websocket';
 
-// ─── Shared in-memory state ───────────────────────────────────────────────────
+// Shared in-memory state 
 
 export const connectedScanners = new Map<string, { ws: SocketStream['socket']; scanner: Scanner }>();
 export const blockedScanners   = new Set<string>();
 
-// ─── Broadcast helpers ────────────────────────────────────────────────────────
+// Active event (set from the lobby "Start" / "Stop" controls) 
+//
+// The broadcasting/scanning server only treats scans as valid for this event.
+// `null` means no event is currently being scanned — scanner devices should
+// show "No active events on this server".
+
+let _activeEvent: ActiveEventInfo | null = null;
+
+export function getActiveEvent(): ActiveEventInfo | null {
+  return _activeEvent;
+}
+
+export function setActiveEvent(event: ActiveEventInfo): void {
+  _activeEvent = event;
+}
+
+export function clearActiveEvent(): void {
+  _activeEvent = null;
+}
+
+// Broadcast helpers 
 
 export function broadcast(message: WSMessage, excludeId?: string): void {
   const data = JSON.stringify(message);

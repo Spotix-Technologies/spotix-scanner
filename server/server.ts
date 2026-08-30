@@ -18,21 +18,20 @@ import path from 'path';
 import { getOrCreateCert } from './ssl';
 import { getToken } from './db';
 
-import { registerHealthRoutes }    from './routes/health';
-import { registerGuestRoutes }     from './routes/guests';
-import { registerScannerRoutes }   from './routes/scanners';
-import { registerLogRoutes }       from './routes/logs';
-import { registerScanRoutes }      from './routes/scan';
-import { registerEventRoutes }     from './routes/event';
-import { registerWebSocketRoutes } from './routes/websocket';
+import { registerHealthRoutes }       from './routes/health';
+import { registerGuestRoutes }        from './routes/guests';
+import { registerScannerRoutes }      from './routes/scanners';
+import { registerLogRoutes }          from './routes/logs';
+import { registerScanRoutes }         from './routes/scan';
+import { registerEventRoutes }        from './routes/event';
+import { registerEventRecordRoutes }  from './routes/events';
+import { registerWebSocketRoutes }    from './routes/websocket';
 
-// Re-export for electron/main.ts which calls getOrCreateCert directly
 export { getOrCreateCert } from './ssl';
 
-// ─── Route registration ───────────────────────────────────────────────────────
+// Route registration 
 
 function applyRoutes(app: FastifyInstance): void {
-  // Global CORS hook — must run before any route handler
   app.addHook('onRequest', async (req: FastifyRequest, reply: FastifyReply) => {
     reply.header('Access-Control-Allow-Origin', '*');
     reply.header('Access-Control-Allow-Methods', 'GET,POST,PATCH,DELETE,OPTIONS');
@@ -46,10 +45,11 @@ function applyRoutes(app: FastifyInstance): void {
   registerLogRoutes(app);
   registerScanRoutes(app);
   registerEventRoutes(app);
+  registerEventRecordRoutes(app);
   registerWebSocketRoutes(app);
 }
 
-// ─── Static file + SPA fallback helper ───────────────────────────────────────
+// Static file + SPA fallback 
 
 async function applyStatic(app: FastifyInstance, staticDir: string): Promise<void> {
   await app.register(fastifyStatic, {
@@ -57,14 +57,8 @@ async function applyStatic(app: FastifyInstance, staticDir: string): Promise<voi
     prefix:   '/',
     index:    'index.html',
     wildcard: false,
-    setHeaders: (res, filePath) => {
-      if (!path.extname(filePath)) {
-        res.setHeader('Content-Type', 'application/octet-stream');
-      }
-    },
   });
 
-  // SPA fallback — serve index.html for extensionless routes (page navigations)
   app.setNotFoundHandler(async (req: FastifyRequest, reply: FastifyReply) => {
     const url          = req.url.split('?')[0];
     const hasExtension = path.extname(url) !== '';
@@ -73,43 +67,49 @@ async function applyStatic(app: FastifyInstance, staticDir: string): Promise<voi
   });
 }
 
-// ─── Server factory ───────────────────────────────────────────────────────────
+// Server factory 
+// Here's the gist:
+//
+// Two independent Fastify instances share the same routes:
+//   - httpApp  (127.0.0.1, options.httpPort) — the Electron window + Next.js UI
+//     talk to this. It starts once at app boot and stays up for the whole
+//     app session.
+//   - httpsApp (0.0.0.0, options.port) — scanner devices over WiFi talk
+//     to this. It is only listening while an event is "live" — started by
+//     the lobby's Start button, stopped by Stop. Each has its own start/stop
+//     so toggling the broadcast layer never touches the already-bound admin
+//     HTTP port.
 
-/**
- * Creates and configures two Fastify instances:
- *   - HTTPS on `port`      → used by scanner devices on the LAN (camera requires HTTPS)
- *   - HTTP  on `httpPort`  → used by the local admin Electron window (localhost only)
- *
- * Both instances share the same routes and the same in-memory state (state.ts).
- */
 export async function createServer(options: {
-  certDir: string;
+  certDir:   string;
   staticDir: string;
-  port: number;
-  httpPort: number;
-}): Promise<{ start: () => Promise<string>; stop: () => Promise<void>; httpAddress: string }> {
+  port:      number;
+  httpPort:  number;
+}): Promise<{
+  startHttp:  () => Promise<string>;
+  stopHttp:   () => Promise<void>;
+  startHttps: () => Promise<string>;
+  stopHttps:  () => Promise<void>;
+  isHttpsRunning: () => boolean;
+  httpAddress: string;
+}> {
   const { cert, key, localIPs } = getOrCreateCert(options.certDir);
 
-  // HTTPS — for scanner devices
   const httpsApp = Fastify({ https: { cert, key }, logger: false });
   await httpsApp.register(fastifyWebsocket);
   await applyStatic(httpsApp, options.staticDir);
   applyRoutes(httpsApp);
 
-  // HTTP — for local admin window (127.0.0.1 only, no SSL overhead)
   const httpApp = Fastify({ logger: false });
   await httpApp.register(fastifyWebsocket);
   await applyStatic(httpApp, options.staticDir);
   applyRoutes(httpApp);
 
-  let _httpAddress = '';
+  let _httpAddress    = '';
+  let _httpsRunning   = false;
 
   return {
-    start: async () => {
-      const address = await httpsApp.listen({ port: options.port, host: '0.0.0.0' });
-      console.log(`[Server] HTTPS (scanners) → ${address}`);
-      console.log(`[Server] Reachable at: ${localIPs.map(ip => `https://${ip}:${options.port}`).join(', ')}`);
-
+    startHttp: async () => {
       _httpAddress = await httpApp.listen({ port: options.httpPort, host: '127.0.0.1' });
       console.log(`[Server] HTTP  (admin)   → ${_httpAddress}`);
 
@@ -120,12 +120,28 @@ export async function createServer(options: {
         console.error('[Server] WARNING: Database auth failed on startup:', e);
       }
 
-      return address;
+      return _httpAddress;
     },
-    stop: async () => {
-      await httpsApp.close();
+    stopHttp: async () => {
       await httpApp.close();
     },
+
+    startHttps: async () => {
+      if (_httpsRunning) return `https://0.0.0.0:${options.port}`;
+      const address = await httpsApp.listen({ port: options.port, host: '0.0.0.0' });
+      _httpsRunning = true;
+      console.log(`[Server] HTTPS (scanners) → ${address}`);
+      console.log(`[Server] Reachable at: ${localIPs.map(ip => `https://${ip}:${options.port}`).join(', ')}`);
+      return address;
+    },
+    stopHttps: async () => {
+      if (!_httpsRunning) return;
+      await httpsApp.close();
+      _httpsRunning = false;
+      console.log('[Server] HTTPS (scanners) stopped');
+    },
+
+    isHttpsRunning: () => _httpsRunning,
     get httpAddress() { return _httpAddress; },
   };
 }

@@ -11,40 +11,44 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { pbGet, pbPost, pbPatch, pbDelete, pbFilter, getToken, getGuestByTicketId, POCKETBASE_URL } from '../db';
+import { pbGet, pbPost, pbPatch, pbDelete, pbFilter, getToken, getGuestByTicketId, getOrCreateEvent, POCKETBASE_URL } from '../db';
 import { broadcast } from '../state';
 import type { Guest } from '../types';
 
 /**
  * Guest CRUD + bulk import routes.
  *
- * GET    /api/guests              — list all (Manage Registry)
- * POST   /api/guests              — create single guest
- * PATCH  /api/guests/:id          — edit guest fields
- * DELETE /api/guests/:id          — remove guest
- * POST   /api/guests/import       — bulk upsert from JSON array
+ * GET    /api/guests               — list all (optionally ?eventId=)
+ * POST   /api/guests               — create single guest
+ * PATCH  /api/guests/:id           — edit guest fields
+ * DELETE /api/guests/:id           — remove guest
+ * POST   /api/guests/import        — bulk upsert from envelope { guests, eventId, eventName }
  */
 export function registerGuestRoutes(app: FastifyInstance): void {
 
-  // ─── GET all guests ──────────────────────────────────────────────────────────
+  // ─── GET guests (optionally filtered by eventId) ─────────────────────────
 
-  app.get('/api/guests', async (_req, reply) => {
-    const res = await pbGet('/api/collections/guests/records?perPage=500&sort=+fullName');
+  app.get<{ Querystring: { eventId?: string } }>('/api/guests', async (req, reply) => {
+    const { eventId } = req.query;
+    const url = eventId
+      ? `/api/collections/guests/records?filter=${pbFilter(`eventId='${eventId.replace(/'/g, "\\'")}'`)}&perPage=500&sort=+fullName`
+      : `/api/collections/guests/records?perPage=500&sort=+fullName`;
+    const res = await pbGet(url);
     if (!res.ok) return reply.status(500).send({ error: 'Failed to fetch guests' });
     const data = await res.json() as { items: Guest[] };
     return reply.send(data.items ?? []);
   });
 
-  // ─── POST create single guest ────────────────────────────────────────────────
+  // ─── POST create single guest ─────────────────────────────────────────────
 
-  app.post<{ Body: Omit<Guest, 'id'> }>('/api/guests', async (req, reply) => {
-    const { fullName, email, ticketId, ticketType, checkedIn, checkedInAt, checkedInBy, faceEmbedding } = req.body;
+  app.post<{ Body: Omit<Guest, 'id'> & { eventId?: string } }>('/api/guests', async (req, reply) => {
+    const { fullName, email, ticketId, ticketType, checkedIn, checkedInAt, checkedInBy, faceEmbedding, eventId } = req.body;
 
     if (!fullName?.trim() || !email?.trim() || !ticketId?.trim() || !ticketType?.trim()) {
       return reply.status(400).send({ error: 'fullName, email, ticketId, and ticketType are required' });
     }
 
-    const existing = await getGuestByTicketId(ticketId.trim());
+    const existing = await getGuestByTicketId(ticketId.trim(), (eventId as any)?.trim());
     if (existing) {
       return reply.status(409).send({ error: `Ticket ID "${ticketId}" already exists` });
     }
@@ -58,11 +62,11 @@ export function registerGuestRoutes(app: FastifyInstance): void {
       checkedInAt:   checkedInAt ?? null,
       checkedInBy:   checkedInBy ?? null,
       faceEmbedding: Array.isArray(faceEmbedding) && faceEmbedding.length > 0 ? faceEmbedding : null,
+      eventId:       (eventId as any) ?? '',
     });
 
     if (!res.ok) {
-      const err = await res.text();
-      console.error('[Server] Create guest failed:', err);
+      console.error('[Server] Create guest failed:', await res.text());
       return reply.status(500).send({ error: 'Failed to create guest' });
     }
 
@@ -71,7 +75,7 @@ export function registerGuestRoutes(app: FastifyInstance): void {
     return reply.status(201).send(created);
   });
 
-  // ─── PATCH update guest ──────────────────────────────────────────────────────
+  // ─── PATCH update guest ───────────────────────────────────────────────────
 
   app.patch<{ Params: { id: string }; Body: Partial<Guest> }>('/api/guests/:id', async (req, reply) => {
     const { id } = req.params;
@@ -85,115 +89,134 @@ export function registerGuestRoutes(app: FastifyInstance): void {
     if (checkedInAt !== undefined) update.checkedInAt = checkedInAt;
     if (checkedInBy !== undefined) update.checkedInBy = checkedInBy;
     if (faceEmbedding !== undefined) {
-      update.faceEmbedding = Array.isArray(faceEmbedding) && faceEmbedding.length > 0
-        ? faceEmbedding
-        : null;
+      update.faceEmbedding = Array.isArray(faceEmbedding) && faceEmbedding.length > 0 ? faceEmbedding : null;
     }
 
     const res = await pbPatch(`/api/collections/guests/records/${id}`, update);
     if (!res.ok) {
-      const err = await res.text();
-      console.error('[Server] Update guest failed:', err);
+      console.error('[Server] Update guest failed:', await res.text());
       return reply.status(500).send({ error: 'Failed to update guest' });
     }
 
-    const updated = await res.json() as Guest;
-    return reply.send(updated);
+    return reply.send(await res.json() as Guest);
   });
 
-  // ─── DELETE guest ────────────────────────────────────────────────────────────
+  // ─── DELETE guest ─────────────────────────────────────────────────────────
 
   app.delete<{ Params: { id: string } }>('/api/guests/:id', async (req, reply) => {
     const { id } = req.params;
     const res = await pbDelete(`/api/collections/guests/records/${id}`);
     if (!res.ok && res.status !== 404) {
-      console.error('[Server] Delete guest failed:', res.status, await res.text());
       return reply.status(500).send({ error: 'Failed to delete guest' });
     }
     return reply.status(204).send();
   });
 
-  // ─── POST bulk import ────────────────────────────────────────────────────────
-  // NOTE: must be registered BEFORE the generic POST /api/guests handler but
-  // Fastify matches by full path so order here does not matter — exact paths
-  // always win over parameterised ones.
+  // ─── POST bulk import ─────────────────────────────────────────────────────
+  // Accepts:  { guests: GuestImportRow[], eventId?: string, eventName?: string }
+  // eventId + eventName come from the Booker export envelope and are stored
+  // against every guest so scans can be scoped to a specific event.
 
-  app.post<{ Body: { guests: Guest[] } }>('/api/guests/import', async (req, reply) => {
-    const { guests } = req.body;
-    if (!Array.isArray(guests)) return reply.status(400).send({ error: 'guests must be an array' });
+  // Accepts EITHER:
+  //   a) Envelope: { guests: [], eventId?, eventName? }  — from Booker export / welcome import
+  //   b) Legacy bare array: []                           — from old GuestImport component
+  app.post<{ Body: Record<string, unknown> | unknown[] }>(
+    '/api/guests/import',
+    async (req, reply) => {
+      const raw: unknown = req.body;
+      let guests: (Guest & { eventId?: string })[];
+      let eventId   = '';
+      let eventName = '';
 
-    console.log(`[Server] Import started: ${guests.length} attendees recorded`);
-
-    let token: string;
-    try {
-      token = await getToken();
-    } catch (e) {
-      console.error('[Server] Import aborted — auth failed:', e);
-      return reply.status(500).send({ error: 'PocketBase authentication failed' });
-    }
-
-    // Fetch all existing ticketIds in one shot to avoid N queries
-    let existingTicketIds: Set<string>;
-    try {
-      const res = await fetch(
-        `${POCKETBASE_URL}/api/collections/guests/records?perPage=500&fields=ticketId`,
-        { headers: { Authorization: token } }
-      );
-      if (!res.ok) throw new Error(`Failed to fetch existing guests: ${res.status}`);
-      const data = await res.json() as { items: { ticketId: string }[] };
-      existingTicketIds = new Set((data.items ?? []).map(g => g.ticketId));
-      console.log(`[Server] Found ${existingTicketIds.size} existing ticket IDs`);
-    } catch (e) {
-      console.error('[Server] Import aborted — could not load existing guests:', e);
-      return reply.status(500).send({ error: 'Failed to load existing guest list' });
-    }
-
-    let imported = 0, skipped = 0;
-
-    for (const guest of guests) {
-      if (!guest.fullName || !guest.email || !guest.ticketId || !guest.ticketType) {
-        console.log(`[Server] Skipped (missing fields): ${JSON.stringify(guest)}`);
-        skipped++; continue;
+      if (Array.isArray(raw)) {
+        guests = raw as (Guest & { eventId?: string })[];
+      } else if (raw && typeof raw === 'object' && Array.isArray((raw as any).guests)) {
+        guests    = (raw as any).guests as (Guest & { eventId?: string })[];
+        eventId   = (raw as any).eventId   ?? '';
+        eventName = (raw as any).eventName ?? '';
+      } else {
+        return reply.status(400).send({ error: 'Body must be a guest array or envelope { guests: [] }' });
       }
 
-      if (existingTicketIds.has(guest.ticketId)) {
-        console.log(`[Server] Skipped (duplicate ticketId): ${guest.ticketId}`);
-        skipped++; continue;
-      }
+      console.log(`[Server] Import started: ${guests.length} guests, eventId="${eventId}", eventName="${eventName}"`);
 
+      let token: string;
       try {
-        const res = await fetch(`${POCKETBASE_URL}/api/collections/guests/records`, {
-          method:  'POST',
-          headers: { 'Content-Type': 'application/json', Authorization: token },
-          body: JSON.stringify({
-            fullName:      guest.fullName,
-            email:         guest.email,
-            ticketId:      guest.ticketId,
-            ticketType:    guest.ticketType,
-            checkedIn:     false,
-            checkedInAt:   null,
-            checkedInBy:   null,
-            faceEmbedding: Array.isArray(guest.faceEmbedding) && guest.faceEmbedding.length > 0
-              ? guest.faceEmbedding
-              : null,
-          }),
-        });
+        token = await getToken();
+      } catch (e) {
+        return reply.status(500).send({ error: 'PocketBase authentication failed' });
+      }
 
-        if (res.ok) {
-          imported++;
-          existingTicketIds.add(guest.ticketId); // guard against dupes within same batch
-        } else {
-          console.error(`[Server] Failed to import ${guest.ticketId}: ${res.status} ${await res.text()}`);
+      // Upsert the event record (so welcome page can list it)
+      if (eventId) {
+        try {
+          await getOrCreateEvent(eventId, eventName || eventId);
+        } catch (e) {
+          console.error('[Server] Could not upsert event record:', e);
+        }
+      }
+
+      // Fetch existing ticketIds scoped to this event to avoid duplicates
+      let existingTicketIds: Set<string>;
+      try {
+        const filter = eventId
+          ? `&filter=${pbFilter(`eventId='${eventId.replace(/'/g, "\\'")}'`)}`
+          : '';
+        const res = await fetch(
+          `${POCKETBASE_URL}/api/collections/guests/records?perPage=500&fields=ticketId${filter}`,
+          { headers: { Authorization: token } }
+        );
+        if (!res.ok) throw new Error(`${res.status}`);
+        const data = await res.json() as { items: { ticketId: string }[] };
+        existingTicketIds = new Set((data.items ?? []).map(g => g.ticketId));
+        console.log(`[Server] ${existingTicketIds.size} existing tickets for this event`);
+      } catch (e) {
+        console.error('[Server] Could not load existing guests:', e);
+        return reply.status(500).send({ error: 'Failed to load existing guest list' });
+      }
+
+      let imported = 0, skipped = 0;
+
+      for (const guest of guests) {
+        if (!guest.fullName || !guest.email || !guest.ticketId || !guest.ticketType) {
+          skipped++; continue;
+        }
+        if (existingTicketIds.has(guest.ticketId)) { skipped++; continue; }
+
+        try {
+          const res = await fetch(`${POCKETBASE_URL}/api/collections/guests/records`, {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: token },
+            body: JSON.stringify({
+              fullName:      guest.fullName,
+              email:         guest.email,
+              ticketId:      guest.ticketId,
+              ticketType:    guest.ticketType,
+              checkedIn:     false,
+              checkedInAt:   null,
+              checkedInBy:   null,
+              faceEmbedding: Array.isArray(guest.faceEmbedding) && guest.faceEmbedding.length > 0
+                ? guest.faceEmbedding : null,
+              eventId: eventId || (guest.eventId ?? ''),
+            }),
+          });
+
+          if (res.ok) {
+            imported++;
+            existingTicketIds.add(guest.ticketId);
+          } else {
+            console.error(`[Server] Failed to import ${guest.ticketId}: ${res.status} ${await res.text()}`);
+            skipped++;
+          }
+        } catch (e) {
+          console.error(`[Server] Exception importing ${guest.ticketId}:`, e);
           skipped++;
         }
-      } catch (e) {
-        console.error(`[Server] Exception importing ${guest.ticketId}:`, e);
-        skipped++;
       }
-    }
 
-    console.log(`[Server] Import done: ${imported} imported, ${skipped} skipped`);
-    broadcast({ type: 'guests_imported', payload: { imported, skipped } });
-    return reply.send({ imported, skipped });
-  });
+      console.log(`[Server] Import done: ${imported} imported, ${skipped} skipped`);
+      broadcast({ type: 'guests_imported', payload: { imported, skipped } });
+      return reply.send({ imported, skipped });
+    }
+  );
 }

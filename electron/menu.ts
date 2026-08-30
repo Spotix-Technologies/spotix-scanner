@@ -82,6 +82,14 @@ export function buildAppMenu(mainWindow: BrowserWindow | null): void {
       label: 'Navigate',
       submenu: [
         {
+          label: 'Lobby',
+          accelerator: 'CmdOrCtrl+0',
+          click: () => {
+            mainWindow?.webContents.send('menu:navigate', '/welcome');
+          },
+        },
+        { type: 'separator' as const },
+        {
           label: 'Control Panel',
           accelerator: 'CmdOrCtrl+1',
           click: () => {
@@ -93,6 +101,21 @@ export function buildAppMenu(mainWindow: BrowserWindow | null): void {
           accelerator: 'CmdOrCtrl+2',
           click: () => {
             mainWindow?.webContents.send('menu:navigate', '/manage/');
+          },
+        },
+        {
+          label: 'Sync Check-ins',
+          accelerator: 'CmdOrCtrl+3',
+          click: () => {
+            mainWindow?.webContents.send('menu:navigate', '/sync');
+          },
+        },
+        { type: 'separator' as const },
+        {
+          label: 'Settings',
+          accelerator: 'CmdOrCtrl+,',
+          click: () => {
+            mainWindow?.webContents.send('menu:navigate', '/settings');
           },
         },
       ],

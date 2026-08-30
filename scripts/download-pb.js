@@ -8,6 +8,7 @@
  * permission of Spotix Technologies.
  *
  * For licensing inquiries, contact: legal@spotix.com.ng
+ * Ideally only Github Actions executes this at buildtime
  */
 
 
@@ -16,8 +17,10 @@ const fs    = require('fs');
 const path  = require('path');
 const { execSync } = require('child_process');
 
-// ── Config — update version here when PocketBase releases 
-const PB_VERSION = '0.36.8';
+// Config: pinned PocketBase version (do not bump without updating
+// pocketbase-setup.ts's schema format — 0.23+ uses a different collection
+// schema shape and the _superusers collection instead of admins).
+const PB_VERSION = '0.21.3';
 
 const TARGETS = {
   win32:  { folder: 'electron/pocketbase-win',   zip: `pocketbase_${PB_VERSION}_windows_amd64.zip`  },
@@ -51,7 +54,7 @@ fs.mkdirSync(OUT_DIR, { recursive: true });
 console.log(`[PocketBase] Downloading v${PB_VERSION} for ${platform}...`);
 console.log(`[PocketBase] URL: ${ZIP_URL}`);
 
-// ── Download ──────────────────────────────────────────────────────────────────
+// Actual download
 function download(url, dest, redirects = 0) {
   if (redirects > 5) { console.error('Too many redirects'); process.exit(1); }
 
@@ -74,7 +77,7 @@ function download(url, dest, redirects = 0) {
   });
 }
 
-// ── Unzip ─────────────────────────────────────────────────────────────────────
+// Unzip
 async function main() {
   await download(ZIP_URL, ZIP_PATH);
   console.log('[PocketBase] Download complete. Extracting...');
@@ -90,7 +93,7 @@ async function main() {
   }
 
   fs.unlinkSync(ZIP_PATH); // clean up the zip
-  console.log(`[PocketBase] Ready at ${BIN_PATH} ✓`);
+  console.log(`[PocketBase] Ready at ${BIN_PATH}`);
 }
 
 main().catch(err => { console.error(err); process.exit(1); });

@@ -20,9 +20,11 @@ export interface Guest {
   checkedInAt: string | null;
   checkedInBy: string | null;
   faceEmbedding: number[] | null;
+  /** PocketBase eventId — scopes this guest to a specific imported event */
+  eventId: string;
 }
 
-export type ScanResult = 'success' | 'already_scanned' | 'invalid';
+export type ScanResult = 'success' | 'already_scanned' | 'invalid' | 'wrong_event';
 
 export interface Log {
   id: string;
@@ -52,6 +54,21 @@ export interface ScanRequest {
   email?: string;
   faceEmbedding?: number[];
   scannerId: string;
+  /** The event currently loaded on the scanner — used to scope lookups. */
+  eventId?: string;
+}
+
+/**
+ * The event currently selected/started from the lobby for live scanning.
+ * `null` (absence of this object) means no event is active — scanner
+ * devices should show "No active events on this server".
+ */
+export interface ActiveEventInfo {
+  /** The logical event ID (from Booker / JSON export) */
+  eventId:   string;
+  /** PocketBase record ID for the events collection */
+  pbId:      string;
+  eventName: string;
 }
 
 export interface WSMessage {
@@ -63,6 +80,7 @@ export interface WSMessage {
     | 'scanner_unblocked'
     | 'event_ended'
     | 'stats_update'
-    | 'guests_imported';
+    | 'guests_imported'
+    | 'active_event_changed';
   payload: unknown;
 }

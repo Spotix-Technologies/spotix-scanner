@@ -442,6 +442,59 @@ export NODE_OPTIONS="--max-old-space-size=512"
 npm run build:UI
 ```
 
+
+
+
+# Spotix Scanner — Backend Changes (electron)
+
+PocketBase version: **0.21.3**
+
+## Task
+Enforce strict event scoping on the `/api/scan` endpoint: a scan (by ticket ID,
+email, or face) must belong to the **same event** that is currently loaded on
+the scanner. If a guest exists but belongs to a different event, the scan must
+be rejected with a clear "doesn't belong to this event" error instead of being
+treated as an "invalid ticket" or, worse, checked in against the wrong event.
+
+## Files changed
+
+### `server/types.ts`
+- Added `'wrong_event'` to the `ScanResult` union (used for the `logs` collection
+  `result` field).
+- Added an optional `eventId?: string` field to `ScanRequest` — this is the
+  event ID currently loaded on the scanner, sent with every scan.
+
+### `server/routes/scan.ts`
+- The guest lookup (`getGuestByTicketId` / `getGuestByEmail` / `findGuestByFace`)
+  is now performed **globally** (no longer pre-filtered by `eventId`), so we can
+  tell the difference between:
+  - "no such guest exists anywhere" → `invalid`
+  - "guest exists, but for a different event" → **new** `wrong_event`
+- Added a new check immediately after the guest lookup:
+  ```ts
+  if (eventId && guest.eventId !== eventId) {
+    // log + broadcast as 'wrong_event'
+    return reply.send({
+      result: 'wrong_event',
+      message: `${guest.fullName} does not belong to this event.`,
+    });
+  }
+  ```
+  This scan is logged (result = `wrong_event`) and broadcast over the websocket
+  (with `guest: null` to avoid leaking another event's guest data), but the
+  guest is **not** checked in.
+- All existing behaviour (blocked scanners, sync-lock check, already-scanned,
+  success check-in) is unchanged and still runs only after the event-scoping
+  check passes.
+
+## Notes
+- This relies on the frontend (UI) now sending `eventId` in the `/api/scan`
+  request body — see the paired `UI.zip` changes.
+- If the scanner has no active event loaded (`eventId` is `undefined`), the
+  event-scoping check is skipped and behaviour falls back to the previous
+  (unscoped) lookup — this preserves compatibility for setups without an
+  active-event workflow.
+
 ---
 
 ## Final Notes

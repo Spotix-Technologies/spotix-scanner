@@ -11,8 +11,8 @@ files:
   - package.json
 
 extraResources:
-  - from: nextjs-app/out
-    to: app/nextjs-app/out
+  - from: UI/out
+    to: app/UI/out
   - from: assets/
     to: assets/
     filter: "**/*"

@@ -12,7 +12,7 @@
 
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { SocketStream } from '@fastify/websocket';
-import { connectedScanners, blockedScanners, broadcast, sendToScanner } from '../state';
+import { connectedScanners, blockedScanners, broadcast, sendToScanner, getActiveEvent } from '../state';
 import type { Scanner } from '../types';
 
 /**
@@ -21,7 +21,10 @@ import type { Scanner } from '../types';
  * Each connecting scanner device provides:
  *   ?scannerId=<id>&name=<display-name>
  *
- * On connect:  registers the device, notifies all peers via scanner_joined.
+ * On connect:  registers the device, notifies all peers via scanner_joined,
+ *              and sends the device the server's current active-event state
+ *              (so the scanner page knows immediately whether to show
+ *              "No active events on this server" or start scanning).
  * On disconnect: removes the device, notifies peers via scanner_left.
  *
  * Blocked scanners receive an immediate scanner_blocked message so they can
@@ -48,6 +51,9 @@ export function registerWebSocketRoutes(app: FastifyInstance): void {
     if (blockedScanners.has(scannerId)) {
       sendToScanner(scannerId, { type: 'scanner_blocked', payload: { message: 'This scanner has been disabled by the admin.' } });
     }
+
+    // Tell this device which event (if any) is currently live.
+    sendToScanner(scannerId, { type: 'active_event_changed', payload: { active: getActiveEvent() } });
 
     broadcast({ type: 'scanner_joined', payload: scanner });
 

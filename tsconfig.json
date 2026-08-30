@@ -13,5 +13,5 @@
     "declarationMap": true,
     "sourceMap": true
   },
-  "exclude": ["node_modules", "dist", "nextjs-app"]
+  "exclude": ["node_modules", "dist", "UI"]
 }

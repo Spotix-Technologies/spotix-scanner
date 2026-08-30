@@ -31,7 +31,7 @@ jobs:
         run: npm ci
 
       - name: Install Next.js dependencies
-        run: npm ci --prefix nextjs-app
+        run: npm ci --prefix UI
 
       # ── 4. Download PocketBase binary for current platform ───────────────────
       - name: Download PocketBase

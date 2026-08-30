@@ -4,5 +4,5 @@
     "outDir": "./dist/"
   },
   "include": ["electron/**/*"],
-  "exclude": ["node_modules", "dist", "nextjs-app", "server"]
+  "exclude": ["node_modules", "dist", "UI", "server"]
 }
