@@ -17,12 +17,19 @@ export interface AppSettings {
   trayEnabled:            boolean;
   notificationsEnabled:   boolean;
   autoSyncDialogOnImport: boolean;
+  // Whether the app should launch straight to a minimized window. Defaults
+  // to false so first launches on a new device — and every launch until the
+  // operator explicitly opts in from Settings — show the window normally.
+  // Distinct from trayEnabled, which only governs what happens when the
+  // window is *closed*, not what happens at launch.
+  startMinimized:         boolean;
 }
 
 export const DEFAULT_SETTINGS: AppSettings = {
   trayEnabled:            true,
   notificationsEnabled:   true,
   autoSyncDialogOnImport: true,
+  startMinimized:         false,
 };
 
 export function loadSettings(): AppSettings {

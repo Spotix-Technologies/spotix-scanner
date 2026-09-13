@@ -10,12 +10,14 @@
  * For licensing inquiries, contact: legal@spotix.com.ng
  */
 
-import { ipcMain, shell } from 'electron';
+import { ipcMain, shell, app } from 'electron';
 import path from 'path';
 import { IS_DEV, FASTIFY_PORT } from '../paths';
 import { getLocalIPs } from '../network';
 
 export function registerMiscIpc(): void {
+  ipcMain.handle('app:getVersion', () => app.getVersion());
+
   ipcMain.handle('shell:openPath', async (_event, filePath: string) => {
     await shell.showItemInFolder(filePath);
   });

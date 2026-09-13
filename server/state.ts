@@ -15,6 +15,10 @@ import type { SocketStream } from '@fastify/websocket';
 
 // Shared in-memory state 
 
+// `ws` holds the real `ws` WebSocket for each connected scanner device —
+// that's `SocketStream['socket']` under the installed @fastify/websocket
+// v8.3.1 (the wrapper-Duplex shape used through v9; v10+ passes the raw
+// WebSocket directly instead — see routes/websocket.ts for the full note).
 export const connectedScanners = new Map<string, { ws: SocketStream['socket']; scanner: Scanner }>();
 export const blockedScanners   = new Set<string>();
 

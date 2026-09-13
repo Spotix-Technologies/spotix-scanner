@@ -69,11 +69,24 @@ export function createWindow(): void {
 
   win.once('ready-to-show', () => {
     splashWindow?.close();
+
+    if (appSettings.startMinimized) {
+      // Explicit, user-chosen opt-in only (Settings → "Start minimized").
+      // Nothing sets this by default, so a fresh install / new device never
+      // takes this branch on its own.
+      win.minimize();
+      return;
+    }
+
     // Always start with a full, visible window — regardless of the
     // "Minimise to System Tray" setting. That setting only governs what
     // happens when the window is *closed* (see win.on('close') below); it
     // previously also hid the window on every launch, which made the app
-    // look like it wasn't starting at all.
+    // look like it wasn't starting at all. win.restore() guards against the
+    // rarer case of Windows itself handing the process a minimized
+    // show-state (e.g. right after an installer's "run after finish" step)
+    // before we ever get a chance to show it.
+    if (win.isMinimized()) win.restore();
     win.show();
     win.focus();
   });

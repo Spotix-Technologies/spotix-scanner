@@ -5,6 +5,7 @@ export interface AppSettings {
   trayEnabled:            boolean;
   notificationsEnabled:   boolean;
   autoSyncDialogOnImport: boolean;
+  startMinimized:         boolean;
 }
 
 export interface AuthStatus {
@@ -45,6 +46,9 @@ export interface SpotixAPI {
   // Network
   getLocalIP:    () => Promise<string>;
   getScannerUrl: () => Promise<string>;
+
+  // App
+  getAppVersion: () => Promise<string>;
 
   // Settings
   settings: {

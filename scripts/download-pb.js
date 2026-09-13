@@ -17,10 +17,8 @@ const fs    = require('fs');
 const path  = require('path');
 const { execSync } = require('child_process');
 
-// Config: pinned PocketBase version (do not bump without updating
-// pocketbase-setup.ts's schema format — 0.23+ uses a different collection
-// schema shape and the _superusers collection instead of admins).
-const PB_VERSION = '0.21.3';
+
+const PB_VERSION = '0.36.8';
 
 const TARGETS = {
   win32:  { folder: 'electron/pocketbase-win',   zip: `pocketbase_${PB_VERSION}_windows_amd64.zip`  },

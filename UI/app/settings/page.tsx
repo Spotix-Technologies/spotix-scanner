@@ -81,6 +81,7 @@ const DEFAULT_SETTINGS: AppSettings = {
   trayEnabled:            true,
   notificationsEnabled:   true,
   autoSyncDialogOnImport: true,
+  startMinimized:         false,
 };
 
 export default function SettingsPage() {
@@ -89,6 +90,7 @@ export default function SettingsPage() {
   const [saving, setSaving]     = useState(false);
   const [saved, setSaved]       = useState(false);
   const [isElectron, setIsElectron] = useState(false);
+  const [appVersion, setAppVersion] = useState<string | null>(null);
 
   // Load settings from Electron on mount
   useEffect(() => {
@@ -96,6 +98,7 @@ export default function SettingsPage() {
     if (!spotix?.settings) return;
     setIsElectron(true);
     spotix.settings.get().then((s: AppSettings) => setSettings(s)).catch(() => {});
+    spotix.getAppVersion?.().then((v: string) => setAppVersion(v)).catch(() => {});
   }, []);
 
   const updateSetting = useCallback(async (key: keyof AppSettings, value: boolean) => {
@@ -159,16 +162,24 @@ export default function SettingsPage() {
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto">
-        <div className="max-w-2xl mx-auto px-6 py-8 flex flex-col gap-8">
+        <div className="max-w-6xl mx-auto px-6 py-8 flex flex-col gap-6">
 
-          {/* Header */}
-          <div>
-            <h1 className="text-xl font-bold text-white">Settings</h1>
-            <p className="text-sm text-white/30 mt-1">
-              Configure how Spotix Scanner behaves on your PC.
-            </p>
+          {/* Header row */}
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div>
+              <h1 className="text-xl font-bold text-white">Settings</h1>
+              <p className="text-sm text-white/30 mt-1">
+                Configure how Spotix Scanner behaves on your PC.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
+              <div className={`w-1.5 h-1.5 rounded-full ${isElectron ? 'bg-emerald-400' : 'bg-amber-400'}`} />
+              <span className="text-xs text-white/40">
+                {isElectron ? 'Running as desktop app' : 'Running in browser mode'}
+              </span>
+            </div>
           </div>
-          
+
           {/* We show a text if the user visits the app from browser */}
           {!isElectron && (
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-amber-400/10 border border-amber-400/20 text-amber-300 text-sm">
@@ -177,90 +188,120 @@ export default function SettingsPage() {
             </div>
           )}
 
-          {/* App Behaviour */}
-          <section>
-            <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
-              App Behaviour
-            </p>
-            <div className="bg-[#141414] border border-white/[0.05] rounded-2xl px-5">
-              <SettingRow
-                icon={Monitor}
-                title="Minimise to System Tray"
-                description="When you close the window, Spotix Scanner keeps running in the system tray instead of quitting. It will also start automatically on login so it's always ready when you need it."
-                value={settings.trayEnabled}
-                onChange={(v) => updateSetting('trayEnabled', v)}
-                disabled={!isElectron}
-              />
-              <SettingRow
-                icon={RefreshCw}
-                title="Show Auto-Sync Dialog on Import"
-                description="Automatically open the Auto-Sync setup dialog each time you import a new guest list, so you can schedule check-in sync without navigating away."
-                value={settings.autoSyncDialogOnImport}
-                onChange={(v) => updateSetting('autoSyncDialogOnImport', v)}
-                disabled={!isElectron}
-              />
-            </div>
-          </section>
+          {/* Two-column layout: settings on the left, About + Quick Access on the right */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-6 items-start">
 
-          {/* Notifications */}
-          <section>
-            <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
-              Notifications
-            </p>
-            <div className="bg-[#141414] border border-white/[0.05] rounded-2xl px-5">
-              <SettingRow
-                icon={Bell}
-                title="Desktop Notifications"
-                description="Receive system notifications for guest list imports, auto-sync completions, and sync failures. Turning this off silences all Spotix Scanner notifications."
-                value={settings.notificationsEnabled}
-                onChange={(v) => updateSetting('notificationsEnabled', v)}
-                disabled={!isElectron}
-              />
-            </div>
-          </section>
+            {/* Left column — the actual configurable settings */}
+            <div className="flex flex-col gap-6 min-w-0">
 
-          {/* About */}
-          <section>
-            <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
-              About
-            </p>
-            <div className="bg-[#141414] border border-white/[0.05] rounded-2xl px-5 py-4 flex flex-col gap-2.5">
-              {[
-                { label: 'Product',   value: 'Spotix Scanner' },
-                { label: 'Developer', value: 'Spotix Technologies' },
-                { label: 'PocketBase', value: '0.21.3' },
-              ].map(({ label, value }) => (
-                <div key={label} className="flex items-center justify-between text-sm">
-                  <span className="text-white/30">{label}</span>
-                  <span className="text-white/60 font-mono text-xs">{value}</span>
+              {/* App Behaviour */}
+              <section>
+                <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
+                  App Behaviour
+                </p>
+                <div className="bg-[#141414] border border-white/[0.05] rounded-2xl px-5">
+                  <SettingRow
+                    icon={Monitor}
+                    title="Minimise to System Tray"
+                    description="When you close the window, Spotix Scanner keeps running in the system tray instead of quitting. It will also start automatically on login so it's always ready when you need it."
+                    value={settings.trayEnabled}
+                    onChange={(v) => updateSetting('trayEnabled', v)}
+                    disabled={!isElectron}
+                  />
+                  <SettingRow
+                    icon={Monitor}
+                    title="Start Minimized"
+                    description="Launch Spotix Scanner straight into the system tray instead of opening the window. Off by default, so the window always opens normally until you turn this on."
+                    value={settings.startMinimized}
+                    onChange={(v) => updateSetting('startMinimized', v)}
+                    disabled={!isElectron}
+                  />
+                  <SettingRow
+                    icon={RefreshCw}
+                    title="Show Auto-Sync Dialog on Import"
+                    description="Automatically open the Auto-Sync setup dialog each time you import a new guest list, so you can schedule check-in sync without navigating away."
+                    value={settings.autoSyncDialogOnImport}
+                    onChange={(v) => updateSetting('autoSyncDialogOnImport', v)}
+                    disabled={!isElectron}
+                  />
                 </div>
-              ))}
-            </div>
-          </section>
+              </section>
 
-          {/* Quick links */}
-          <section>
-            <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
-              Quick Access
-            </p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { label: 'Lobby',      path: '/welcome',   icon: Zap },
-                { label: 'Dashboard',  path: '/dashboard', icon: LayoutDashboard },
-                { label: 'Sync',       path: '/sync',      icon: RefreshCw },
-                { label: 'Manage',     path: '/manage',    icon: Settings },
-              ].map(({ label, path, icon: Icon }) => (
-                <button
-                  key={path}
-                  onClick={() => router.push(path)}
-                  className="flex items-center gap-2.5 px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.06] text-white/50 hover:text-white/80 hover:bg-white/[0.06] transition-all text-sm"
-                >
-                  <Icon size={14} />
-                  {label}
-                </button>
-              ))}
+              {/* Notifications */}
+              <section>
+                <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
+                  Notifications
+                </p>
+                <div className="bg-[#141414] border border-white/[0.05] rounded-2xl px-5">
+                  <SettingRow
+                    icon={Bell}
+                    title="Desktop Notifications"
+                    description="Receive system notifications for guest list imports, auto-sync completions, and sync failures. Turning this off silences all Spotix Scanner notifications."
+                    value={settings.notificationsEnabled}
+                    onChange={(v) => updateSetting('notificationsEnabled', v)}
+                    disabled={!isElectron}
+                  />
+                </div>
+              </section>
             </div>
-          </section>
+
+            {/* Right column — sidebar: About + Quick Access, sticky on scroll */}
+            <div className="flex flex-col gap-6 lg:sticky lg:top-8">
+
+              {/* About */}
+              <section>
+                <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
+                  About
+                </p>
+                <div className="bg-[#141414] border border-white/[0.05] rounded-2xl p-5 flex flex-col gap-4">
+                  <div className="flex items-center gap-3 pb-4 border-b border-white/[0.05]">
+                    <div className="w-10 h-10 rounded-xl bg-brand-500/20 flex items-center justify-center flex-shrink-0">
+                      <img src="/logo.png" alt="Spotix" className="w-full h-full object-cover rounded-xl" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-white/80 truncate">Spotix Scanner</p>
+                      <p className="text-xs text-white/30 truncate">Spotix Technologies</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2.5">
+                    {[
+                      { label: 'App version', value: appVersion ?? (isElectron ? 'Loading…' : '—') },
+                      { label: 'Mode', value: isElectron ? 'Desktop' : 'Browser' },
+                    ].map(({ label, value }) => (
+                      <div key={label} className="flex items-center justify-between text-sm">
+                        <span className="text-white/30">{label}</span>
+                        <span className="text-white/60 font-mono text-xs">{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </section>
+
+              {/* Quick links */}
+              <section>
+                <p className="text-[11px] font-semibold text-white/20 uppercase tracking-widest mb-3 px-1">
+                  Quick Access
+                </p>
+                <div className="bg-[#141414] border border-white/[0.05] rounded-2xl p-2 flex flex-col gap-1">
+                  {[
+                    { label: 'Lobby',      path: '/welcome',   icon: Zap },
+                    { label: 'Dashboard',  path: '/dashboard', icon: LayoutDashboard },
+                    { label: 'Sync',       path: '/sync',      icon: RefreshCw },
+                    { label: 'Manage',     path: '/manage',    icon: Settings },
+                  ].map(({ label, path, icon: Icon }) => (
+                    <button
+                      key={path}
+                      onClick={() => router.push(path)}
+                      className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-white/50 hover:text-white/80 hover:bg-white/[0.06] transition-all text-sm"
+                    >
+                      <Icon size={14} />
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </section>
+            </div>
+          </div>
         </div>
       </div>
 

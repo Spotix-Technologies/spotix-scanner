@@ -54,6 +54,10 @@ contextBridge.exposeInMainWorld('spotix', {
   getScannerUrl: () =>
     ipcRenderer.invoke('network:getScannerUrl'),
 
+  // App
+  getAppVersion: () =>
+    ipcRenderer.invoke('app:getVersion'),
+
   // Settings 
   settings: {
     get: () =>

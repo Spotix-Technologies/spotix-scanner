@@ -15,7 +15,7 @@ const FASTIFY_URL = typeof window !== 'undefined'
   ? `${window.location.protocol}//${window.location.hostname}:${window.location.protocol === 'https:' ? '2005' : '2006'}`
   : 'http://127.0.0.1:2006';
 
-// ─── Stable scanner ID ────────────────────────────────────────────────────────
+//  Stable scanner ID 
 
 const STORAGE_KEY = 'spotix-scanner-config';
 
@@ -35,7 +35,7 @@ function clearConfig() {
   try { localStorage.removeItem(STORAGE_KEY); } catch { /* ignore */ }
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+//  Helpers ─
 
 function resultLabel(result: ScanStatus): string {
   switch (result) {
@@ -81,7 +81,7 @@ function ResultIcon({ result, size = 14 }: { result: ScanStatus; size?: number }
   }
 }
 
-// ─── Registration Modal ───────────────────────────────────────────────────────
+//  Registration Modal ─
 
 function RegistrationModal({ onRegister }: { onRegister: (c: ScannerConfig) => void }) {
   const [name, setName] = useState('');
@@ -97,8 +97,19 @@ function RegistrationModal({ onRegister }: { onRegister: (c: ScannerConfig) => v
   };
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center p-4">
-      <div className="w-full max-w-sm bg-[#141414] border border-white/[0.08] rounded-2xl p-6 flex flex-col gap-5">
+    <div className="relative flex items-center justify-center p-4 overflow-hidden bg-[#0f0f0f] min-h-screen min-h-[100dvh]">
+      {/* Background — blurred so it sets the scene without competing with the form */}
+      <div className="absolute inset-0">
+        <img
+          src="/scannerBg.jpg"
+          alt=""
+          aria-hidden="true"
+          className="w-full h-full object-cover scale-110 blur-2xl brightness-[0.4] saturate-75"
+        />
+        <div className="absolute inset-0 bg-[#0f0f0f]/60" />
+      </div>
+
+      <div className="relative z-10 w-full max-w-sm bg-[#141414]/90 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 flex flex-col gap-5 shadow-2xl shadow-black/40">
         <div className="text-center flex flex-col items-center gap-3">
           <div className="w-16 h-16 rounded-2xl overflow-hidden">
             <img src="/logo.png" alt="Spotix" className="w-full h-full object-contain" />
@@ -126,7 +137,7 @@ function RegistrationModal({ onRegister }: { onRegister: (c: ScannerConfig) => v
           Start Scanning
         </button>
       </div>
-      <footer className="fixed bottom-0 left-0 right-0 py-3 text-center border-t border-white/[0.06]">
+      <footer className="fixed bottom-0 left-0 right-0 z-10 py-3 text-center border-t border-white/[0.06] bg-[#0f0f0f]/40 backdrop-blur-sm">
         <p className="text-[11px] text-white/30">
           Developed and Managed by{' '}
           <span className="text-white/50 font-medium">Spotix Technologies</span>
@@ -136,7 +147,7 @@ function RegistrationModal({ onRegister }: { onRegister: (c: ScannerConfig) => v
   );
 }
 
-// ─── Blocked Screen ───────────────────────────────────────────────────────────
+//  Blocked Screen 
 
 function BlockedScreen() {
   return (
@@ -159,7 +170,7 @@ function BlockedScreen() {
   );
 }
 
-// ─── Exit Confirm Modal ───────────────────────────────────────────────────────
+//  Exit Confirm Modal ─
 
 function ExitConfirmModal({
   scannerName,
@@ -205,7 +216,7 @@ function ExitConfirmModal({
   );
 }
 
-// ─── History Screen ───────────────────────────────────────────────────────────
+//  History Screen 
 
 function ScannerHistoryScreen({
   entries,
@@ -307,7 +318,7 @@ function ScannerHistoryScreen({
   );
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+//  Main Page ──
 
 export default function ScannerPage() {
   const [config, setConfig]             = useState<ScannerConfig | null>(null);
@@ -331,13 +342,13 @@ export default function ScannerPage() {
   const wsRef      = useRef<WebSocket | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // ── On mount: restore saved config ──────────────────────────────────────────
+  // ── On mount: restore saved config 
   useEffect(() => {
     const saved = getSavedConfig();
     if (saved) setConfig(saved);
   }, []);
 
-  // ── Hydrate history from PocketBase when config is ready ─────────────────────
+  // ── Hydrate history from PocketBase when config is ready 
   useEffect(() => {
     if (!config) return;
 
@@ -376,7 +387,7 @@ export default function ScannerPage() {
     fetchHistory();
   }, [config]);
 
-  // ── WebSocket connection ─────────────────────────────────────────────────────
+  // ── WebSocket connection ──
   useEffect(() => {
     if (!config) return;
 
@@ -425,7 +436,7 @@ export default function ScannerPage() {
     };
   }, [config]);
 
-  // ── Auto-reset after 1 minute ────────────────────────────────────────────────
+  // ── Auto-reset after 1 minute 
   const startTimeout = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
@@ -442,7 +453,7 @@ export default function ScannerPage() {
     setTextInput('');
   }, []);
 
-  // ── Submit scan ──────────────────────────────────────────────────────────────
+  // ── Submit scan 
   const submitScan = useCallback(async (
     payload: { ticketId: string } | { email: string } | { faceEmbedding: number[] }
   ) => {
@@ -494,13 +505,13 @@ export default function ScannerPage() {
     }
   }, [config, status, startTimeout, activeEvent?.eventId]);
 
-  // ── Mode switch ──────────────────────────────────────────────────────────────
+  // ── Mode switch 
   const handleModeChange = (newMode: ScanMode) => {
     resetScan();
     setMode(newMode);
   };
 
-  // ── Exit event ───────────────────────────────────────────────────────────────
+  // ── Exit event ─
   const handleExitConfirm = () => {
     wsRef.current?.close();
     clearConfig();
@@ -511,7 +522,7 @@ export default function ScannerPage() {
     setResultData(null);
   };
 
-  // ── Guards ───────────────────────────────────────────────────────────────────
+  // ── Guards ──
   if (!config) return <RegistrationModal onRegister={setConfig} />;
   if (isBlocked) return <BlockedScreen />;
 

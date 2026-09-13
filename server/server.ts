@@ -95,10 +95,23 @@ export async function createServer(options: {
 }> {
   const { cert, key, localIPs } = getOrCreateCert(options.certDir);
 
-  const httpsApp = Fastify({ https: { cert, key }, logger: false });
-  await httpsApp.register(fastifyWebsocket);
-  await applyStatic(httpsApp, options.staticDir);
-  applyRoutes(httpsApp);
+  // The HTTPS (scanner-facing) app is intentionally NOT built once here.
+  // Fastify instances are one-shot: once `.close()` runs, avvio marks the
+  // instance permanently closed and a later `.listen()` on it throws
+  // ("Fastify has already been closed and cannot be reopened"). Since Stop
+  // calls a real close() (see stopHttps below), reusing a single closured
+  // instance meant the broadcast server could only ever be started once per
+  // app launch — exactly the "can't restart without relaunching the app"
+  // symptom. Building a fresh instance on every startHttps() call instead
+  // means each Stop/Start cycle gets its own instance, so there's nothing
+  // stale to fail against.
+  async function buildHttpsApp(): Promise<FastifyInstance> {
+    const app = Fastify({ https: { cert, key }, logger: false });
+    await app.register(fastifyWebsocket);
+    await applyStatic(app, options.staticDir);
+    applyRoutes(app);
+    return app;
+  }
 
   const httpApp = Fastify({ logger: false });
   await httpApp.register(fastifyWebsocket);
@@ -107,6 +120,7 @@ export async function createServer(options: {
 
   let _httpAddress    = '';
   let _httpsRunning   = false;
+  let _httpsApp: FastifyInstance | null = null;
 
   return {
     startHttp: async () => {
@@ -128,15 +142,17 @@ export async function createServer(options: {
 
     startHttps: async () => {
       if (_httpsRunning) return `https://0.0.0.0:${options.port}`;
-      const address = await httpsApp.listen({ port: options.port, host: '0.0.0.0' });
+      _httpsApp = await buildHttpsApp();
+      const address = await _httpsApp.listen({ port: options.port, host: '0.0.0.0' });
       _httpsRunning = true;
       console.log(`[Server] HTTPS (scanners) → ${address}`);
       console.log(`[Server] Reachable at: ${localIPs.map(ip => `https://${ip}:${options.port}`).join(', ')}`);
       return address;
     },
     stopHttps: async () => {
-      if (!_httpsRunning) return;
-      await httpsApp.close();
+      if (!_httpsRunning || !_httpsApp) return;
+      await _httpsApp.close();
+      _httpsApp = null;
       _httpsRunning = false;
       console.log('[Server] HTTPS (scanners) stopped');
     },

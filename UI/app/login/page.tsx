@@ -22,6 +22,17 @@ import { Mail, Lock, User, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-reac
 
 type Mode = 'checking' | 'signup' | 'login';
 
+// Real Spotix-powered events — the point of the login screen's image panel
+// is to show the operator what they're signing in to run, not stock photos.
+const SHOWCASE_IMAGES = [
+  { src: '/login/red-carpet.jpg', alt: 'Guests on the red carpet at a Spotix-powered event' },
+  { src: '/login/dj.jpg', alt: 'A DJ performing at a Spotix-powered party' },
+  { src: '/login/crowd.jpg', alt: 'A crowd celebrating at a Spotix-powered event' },
+  { src: '/login/pageant.jpg', alt: 'A pageant winner on stage at a Spotix-powered event' },
+];
+ 
+const SHOWCASE_INTERVAL_MS = 5000;
+
 export default function LoginPage() {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>('checking');
@@ -32,6 +43,15 @@ export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [activeImage, setActiveImage] = useState(0);
+
+  useEffect(() => {
+    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const id = setInterval(() => {
+      setActiveImage((i) => (i + 1) % SHOWCASE_IMAGES.length);
+    }, SHOWCASE_INTERVAL_MS);
+    return () => clearInterval(id);
+  }, []);
 
   const isElectron = typeof window !== 'undefined' && !!(window as any).spotix?.auth;
 
@@ -91,7 +111,9 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#0f0f0f] flex items-center justify-center px-4">
+    <div className="min-h-screen bg-[#0f0f0f] flex">
+      {/* Container 1 — the form */}
+      <div className="flex-1 flex items-center justify-center px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
           <div className="w-12 h-12 rounded-2xl bg-brand-500/15 border border-brand-500/20 flex items-center justify-center mb-4 overflow-hidden">
@@ -202,6 +224,44 @@ export default function LoginPage() {
             ? 'This account controls Spotix Scanner on this device.'
             : 'Sign in with the admin account created on this device.'}
         </p>
+      </div>
+      </div>
+
+      {/* Container 2 — rotating showcase of live events */}
+      <div className="hidden lg:flex lg:w-[44%] xl:w-[42%] relative overflow-hidden border-l border-white/[0.08]">
+        {SHOWCASE_IMAGES.map((image, i) => (
+          <Image
+            key={image.src}
+            src={image.src}
+            alt={image.alt}
+            fill
+            priority={i === 0}
+            sizes="42vw"
+            className={`object-cover transition-opacity duration-1000 ease-in-out ${
+              i === activeImage ? 'opacity-100' : 'opacity-0'
+            }`}
+          />
+        ))}
+
+        {/* Scrim for legible text over the photo */}
+        <div className="absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-black/85 via-black/30 to-transparent pointer-events-none" />
+
+        <div className="absolute bottom-8 left-8 right-8 flex items-end justify-between">
+          <div>
+            <p className="text-sm font-semibold text-white">Spotix</p>
+            <p className="text-xs text-white/60 mt-0.5">Live at events across Nigeria</p>
+          </div>
+          <div className="flex items-center gap-1.5">
+            {SHOWCASE_IMAGES.map((image, i) => (
+              <span
+                key={image.src}
+                className={`h-1.5 rounded-full transition-all duration-500 ${
+                  i === activeImage ? 'w-5 bg-white' : 'w-1.5 bg-white/30'
+                }`}
+              />
+            ))}
+          </div>
+        </div>
       </div>
     </div>
   );

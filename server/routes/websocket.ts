@@ -29,6 +29,21 @@ import type { Scanner } from '../types';
  *
  * Blocked scanners receive an immediate scanner_blocked message so they can
  * show the user a meaningful error screen.
+ *
+ * - Correction note
+ * A previous pass "fixed" this file on the theory that @fastify/websocket
+ * v8 passes the raw `ws` WebSocket straight into the handler (no `.socket`
+ * wrapper). That's true from v10.0.0 onward (fastify/fastify-websocket#289),
+ * but package.json pins 8.3.1, which predates that change — in 8.x the
+ * handler still receives the old `SocketStream`: a Duplex created via
+ * `WebSocket.createWebSocketStream(socket)` with the real socket attached
+ * at `.socket`. Treating that Duplex as if it were already the WebSocket
+ * broke things worse: `.readyState`/`.OPEN` were both `undefined` on it (so
+ * the `undefined === undefined` check silently passed), and then `.send()`
+ * — which Duplex streams don't have, only `.write()` — threw "ws.send is
+ * not a function" the moment anything tried to broadcast to a connected
+ * scanner. Reverted to the original `SocketStream`/`.socket` shape, which
+ * is correct for the installed v8.3.1.
  */
 export function registerWebSocketRoutes(app: FastifyInstance): void {
 

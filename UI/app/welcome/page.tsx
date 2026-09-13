@@ -279,6 +279,7 @@ export default function WelcomePage () {
   // `activeServerId` is the pb record ID of the event whose server is running.
   const [activeServerId, setActiveServerId] = useState<string | null>(null);
   const [serverLoading, setServerLoading]   = useState<string | null>(null); // pbId being toggled
+  const [lobbyError, setLobbyError]         = useState<string | null>(null);
 
   const isElectron = typeof window !== 'undefined' && !!(window as any).spotix;
 
@@ -368,6 +369,7 @@ export default function WelcomePage () {
     if (!spotix?.lobby) return;
 
     setServerLoading(ev.id);
+    setLobbyError(null);
     try {
       const eventInfo = { eventId: ev.eventId, pbId: ev.id, eventName: ev.eventName || 'Unnamed Event' };
       const result = await spotix.lobby.startServer(eventInfo);
@@ -375,8 +377,15 @@ export default function WelcomePage () {
         setActiveServerId(ev.id);
         // Also set the active event in the client state
         setActiveEvent(eventInfo);
+      } else {
+        // Surface the failure instead of silently reverting the button —
+        // previously a failed restart (e.g. after the HTTPS layer couldn't
+        // be reopened) looked identical to never having clicked at all.
+        setLobbyError(result.error || 'Failed to start the broadcasting server.');
+        console.error('[Lobby] Failed to start server:', result.error);
       }
     } catch (err) {
+      setLobbyError(String(err));
       console.error('[Lobby] Failed to start server:', err);
     } finally {
       setServerLoading(null);
@@ -390,10 +399,17 @@ export default function WelcomePage () {
     if (!spotix?.lobby) return;
 
     setServerLoading(activeServerId);
+    setLobbyError(null);
     try {
-      await spotix.lobby.stopServer();
-      setActiveServerId(null);
+      const result = await spotix.lobby.stopServer();
+      if (result?.success === false) {
+        setLobbyError(result.error || 'Failed to stop the broadcasting server.');
+        console.error('[Lobby] Failed to stop server:', result.error);
+      } else {
+        setActiveServerId(null);
+      }
     } catch (err) {
+      setLobbyError(String(err));
       console.error('[Lobby] Failed to stop server:', err);
     } finally {
       setServerLoading(null);
@@ -571,6 +587,22 @@ export default function WelcomePage () {
                 Refresh
               </button>
             </div>
+
+            {lobbyError && (
+              <div className="flex items-start gap-3 bg-red-400/5 border border-red-400/20 rounded-xl p-4 mb-4">
+                <AlertCircle size={18} className="text-red-400 flex-shrink-0 mt-0.5" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium text-red-400">Broadcasting server error</p>
+                  <p className="text-xs text-white/40 mt-0.5 break-all">{lobbyError}</p>
+                </div>
+                <button
+                  onClick={() => setLobbyError(null)}
+                  className="text-white/30 hover:text-white/60 flex-shrink-0"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            )}
 
             {eventsLoading ? (
               <div className="flex flex-col gap-3">
